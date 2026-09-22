@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .config import load_config
 from .features import REPRESENTATIONS, SELECTED, assemble, load_features
-from .protocol import compare, evaluate, report
+from .protocol import compare, evaluate, evaluate_interval, report
 
 
 def reproduce(config, from_cache=None, device="cpu", batch_size=32):
@@ -43,6 +43,7 @@ def parser():
         "manifest": "Resolve date pairs and print the usable-label/drop ledger.",
         "embed": "Extract full-window chips and cache frozen encoder features.",
         "evaluate": "Evaluate features with paired jittered spatial cross-validation.",
+        "interval": "Second official score: hold out each acquisition interval in turn.",
         "compare": "Compare two representations on identical grids using all three decision bars.",
         "train": "Fit the feature head on all labels and save a portable model bundle.",
         "predict": "Apply a trusted trained bundle to compatible new-site labelled points.",
@@ -51,10 +52,10 @@ def parser():
     for name, description in descriptions.items():
         p = sub.add_parser(name, help=description, description=description)
         p.add_argument("--config", required=True, help="Site YAML; relative data paths resolve beside this file.")
-        if name in ("evaluate", "compare", "train"):
+        if name in ("evaluate", "interval", "compare", "train"):
             p.add_argument("--features", nargs="+", required=True,
                            help="One or both NPZ encoder caches; fid and all metadata must match in order.")
-        if name in ("evaluate", "train"):
+        if name in ("evaluate", "interval", "train"):
             p.add_argument("--representation", required=True, choices=REPRESENTATIONS,
                            help="Named representation assembled from the supplied encoder blocks.")
         if name == "compare":
@@ -108,12 +109,16 @@ def main(argv=None):
                 print(f"trained n={bundle['n_training']} dim={bundle['feature_dimension']} "
                       f"fingerprint={bundle['training_fingerprint']}")
             else:
+                fn = evaluate_interval if args.command == "interval" else evaluate
+                kwargs = config.evaluation_kwargs()
+                if args.command == "interval":
+                    kwargs.pop("folds", None)   # interval splits are half-per-interval, not k-fold
+
                 def score(name):
-                    result = evaluate(assemble(blocks, name), meta["y"], meta,
-                                      **config.evaluation_kwargs())
+                    result = fn(assemble(blocks, name), meta["y"], meta, **kwargs)
                     report(result, name)
                     return result
-                if args.command == "evaluate":
+                if args.command in ("evaluate", "interval"):
                     score(args.representation)
                 else:
                     compare(score(args.a), score(args.b), args.a, args.b, config.min_effect)

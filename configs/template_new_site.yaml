@@ -45,8 +45,12 @@ tolerance_days: 75
 # Chip side in native pixels. Both dates must fit completely: NO zero-padding.
 # Match physical scale (~0.25 m/px in Herat), not just dimensions, for transfer.
 # Must match a trained bundle. Satlas needs dimensions compatible with its
-# backbone downsampling (use 128 for the reference workflow).
-chip_size: 128
+# backbone downsampling. 64 is the reference: a paired sweep over 32/64/128/256
+# on identical rows and folds put 64 ahead of the old 128 default by 0.0885
+# macro-F1, 8/8 replicates. What matters is the ground extent, not the pixel
+# count -- 64 px here is a ~16 m window, about one building. If your imagery
+# has a different resolution, pick the pixel count that spans ~16 m.
+chip_size: 64
 
 # Fixed-public-seed 100+r origin jitter, plus whole-cell StratifiedGroupKFold.
 # The reference grid spans sample coordinate extrema, not arbitrary scene bounds.

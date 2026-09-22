@@ -61,8 +61,8 @@ A difference is resolved only when:
 
 Standard deviations use the original harness's population convention (`ddof=0`).
 A unanimous effect above 2·SE but below 0.02 is **“consistent but SMALL”**,
-not separated and not a ranking claim. The published top-two +0.0197 is exactly
-such a case, despite 8/8 wins.
+not separated and not a ranking claim. The published top-two gap, +0.0085 on
+7 of 8 replicates, is exactly such a case.
 
 Why all three bars? Against a null of two equally good representations (60
 disjoint random halves of one feature set), 7/8 wins plus 2·SE called **20%**
@@ -74,15 +74,22 @@ They are an empirical calibration on Herat, not a guarantee for every site.
 ## What this does not establish
 
 The headline blocks **space, not time**; all acquisition pairs can appear in
-training and testing. The temporal diagnostic reported alongside it (−0.1755
-averaged over ten intervals, 9/10 worse; −0.1110 on a subset) is **exploratory
-and not comparable to the headline**: it was measured on the superseded
-838-sample manifest, its held-out test rows are drawn by random permutation
-*within* the interval rather than spatially blocked, and it is scored over
-whichever classes appear in each subset rather than the fixed four. One interval
-also dissents, so it is not "resolved" in any case. Read it as evidence that
-holding out an interval hurts, repeatedly and substantially — not as a
-quantified penalty. Do not mistake 0.7259 for unseen-interval performance.
+training and testing. That is why `evaluate_interval` exists as a second
+required score rather than a footnote: it holds out each acquisition in turn,
+withholds the held-out cells from training as well, and pools predictions
+across intervals so the metric is always over the fixed four classes.
+
+On the reference system the two scores are 0.779 and 0.574. Re-running the
+second one with the interval labels shuffled — same capped training pool, same
+cell blocking, no date structure — gives 0.739, so 0.040 of the drop is the
+smaller training pool and 0.165 is date novelty.
+
+The 0.165 is a **lower bound**. Under the month rule the scenes chain: one
+pair's after-image is the next pair's before-image, so a held-out interval's
+model has usually still seen one of its two endpoint images. No date-disjoint
+holdout exists in this archive, and only a second site can measure the real
+cost. Do not mistake 0.779 for unseen-interval performance, and do not treat
+0.574 as the floor either.
 
 For competitive evaluation, the original protocol recommends final scoring
 under an unpublished jitter seed to reduce partition tuning. This repository

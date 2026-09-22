@@ -2,7 +2,8 @@ import numpy as np
 import pytest
 from sklearn.model_selection import StratifiedGroupKFold
 
-from heritage_watch.protocol import Result, compare, default_classifier, evaluate, spatial_blocks
+from heritage_watch.protocol import (Result, compare, default_classifier, evaluate,
+                                     evaluate_interval, spatial_blocks)
 
 
 def test_jitter_changes_groups_and_fold_disjointness():
@@ -104,3 +105,63 @@ def test_per_class_precision_recall_average_over_all_replicates():
         p, r = res.per_class_pr[c]
         assert 0.0 <= p <= 1.0 and 0.0 <= r <= 1.0
     assert res.sd == pytest.approx(np.std(res.per_replicate, ddof=1))
+
+
+def _interval_data(seed=3, n=160):
+    rng = np.random.default_rng(seed)
+    X = rng.normal(size=(n, 6))
+    y = np.array(["A", "B"] * (n // 2))
+    X[y == "B", 0] += 3.0
+    meta = dict(x=rng.random(n), yy=rng.random(n), fid=np.arange(n),
+                pair=np.array([f"p{i % 4}" for i in range(n)]))
+    return X, y, meta
+
+
+def test_evaluate_interval_needs_pair_metadata():
+    X, y, meta = _interval_data()
+    with pytest.raises(ValueError, match="pair"):
+        evaluate_interval(X, y, {k: v for k, v in meta.items() if k != "pair"})
+
+
+def test_evaluate_interval_never_trains_on_the_held_out_interval():
+    """Every training row must come from a different interval AND a different cell."""
+    X, y, meta = _interval_data()
+    seen = []
+
+    def factory():
+        clf = default_classifier()
+        original = clf.fit
+        def fit(a, b):
+            seen.append(len(a))
+            return original(a, b)
+        clf.fit = fit
+        return clf
+
+    r = evaluate_interval(X, y, meta, factory, classes=["A", "B"], blocks=3,
+                          replicates=2, n_train=60)
+    assert len(r.per_replicate) == 2 and 0 <= r.macro_f1 <= 1
+    assert seen and max(seen) <= 60
+
+
+def test_evaluate_interval_rejects_a_single_interval():
+    X, y, meta = _interval_data()
+    meta["pair"] = np.array(["only"] * len(y))
+    with pytest.raises(ValueError, match="two acquisition intervals"):
+        evaluate_interval(X, y, meta, classes=["A", "B"])
+
+
+def test_evaluate_interval_is_harder_than_the_spatial_score_when_dates_carry_the_label():
+    """A date shortcut must inflate evaluate() and collapse under evaluate_interval()."""
+    rng = np.random.default_rng(11)
+    n = 200
+    pair = np.array([f"p{i % 4}" for i in range(n)])
+    y = np.where(np.isin(pair, ["p0", "p1"]), "A", "B")     # label is a function of date
+    X = np.zeros((n, 4))
+    for i, p in enumerate(sorted(set(pair))):               # features encode ONLY the date
+        X[pair == p, i] = 1.0
+    X += rng.normal(scale=0.01, size=X.shape)
+    meta = dict(x=rng.random(n), yy=rng.random(n), fid=np.arange(n), pair=pair)
+    spatial = evaluate(X, y, meta, classes=["A", "B"], blocks=3, folds=2, replicates=2)
+    interval = evaluate_interval(X, y, meta, classes=["A", "B"], blocks=3, replicates=2)
+    assert spatial.macro_f1 > 0.9
+    assert interval.macro_f1 < 0.6

@@ -13,7 +13,7 @@ classes: [New Construction, Solar Panel, Destruction, Temporary Structure]
 drop_categories: [Other, Reconstruction]
 pairing: month
 tolerance_days: 75
-chip_size: 128
+chip_size: 64
 blocks: 6
 folds: 5
 replicates: 8

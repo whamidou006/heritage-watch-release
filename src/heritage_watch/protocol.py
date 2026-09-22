@@ -18,7 +18,7 @@ Typical use:
 
     from heritage_watch.protocol import load_chips, evaluate, report
 
-    t1, t2, y, meta = load_chips("chips_128.npz")
+    t1, t2, y, meta = load_chips("chips_64.npz")
     X = my_model_embeddings(t1, t2)   # anything you like
     report(evaluate(X, y, meta))      # your features, our protocol
 """
@@ -79,6 +79,10 @@ def load_chips(path: str):
     """
     d = np.load(path, allow_pickle=True)
     meta = {"x": d["x"], "yy": d["yy"], "fid": d["fid"]}
+    if "pair" in d.files:
+        # needed by evaluate_interval(); absent in older caches, which is why
+        # this is conditional rather than required.
+        meta["pair"] = d["pair"].astype(str)
     t1 = d["t1"].astype(np.float32) / 255.0
     t2 = d["t2"].astype(np.float32) / 255.0
     return t1, t2, d["y"].astype(str), meta
@@ -203,6 +207,114 @@ def _evaluate(X, y, meta, clf_factory, replicates, seed=_SEED,
 
 
 MIN_EFFECT = 0.02  # smallest macro-F1 gap the protocol will call real
+
+INTERVAL_TRAIN = 500  # rows sampled per interval arm, so every interval is size-matched
+
+
+def evaluate_interval(X, y, meta, clf_factory=default_classifier,
+                      replicates=REPLICATES, seed=_SEED, *, blocks=BLOCKS,
+                      n_train=INTERVAL_TRAIN, classes=None):
+    """The SECOND required score: generalisation to an unseen acquisition.
+
+    evaluate() blocks in space but not in time -- all ten acquisition intervals
+    appear on both sides of every fold, so it measures "another building, same
+    flight". This measures "a flight you have never seen", which is the number
+    that matters if the system is ever pointed at new imagery.
+
+    Each interval is held out in turn. Test rows are WHOLE spatial cells, and
+    those cells are withheld from training too, so the contrast is date novelty
+    and not proximity. Training pools are subsampled to a common size so a big
+    interval is not scored against a bigger training set than a small one.
+    Predictions are pooled across intervals before the metric is taken, so the
+    score is macro-F1 over the fixed four classes rather than an average of
+    per-interval metrics computed over whichever classes happened to appear.
+
+    Expect this to come out well below evaluate(). On the reference data
+    (Satlas-MI + SI diff, 64 px) the two scores are 0.779 and 0.574. Two
+    things cause that drop, and they were measured apart by re-running this
+    function with the interval labels shuffled, which keeps the capped
+    training pool and the cell blocking but destroys the date structure:
+    that null scores 0.739. So the smaller training pool costs 0.040 and
+    date novelty costs 0.165.
+
+    The 0.165 is a lower bound. Under the month rule the scenes chain -- one
+    pair's after-image is the next pair's before-image -- so an interval's
+    "unseen" model has usually still seen one of its two endpoint images
+    through a neighbouring pair. Only a second site can measure the real
+    cost. Report both scores; neither alone describes the system.
+    """
+    if "pair" not in meta:
+        raise ValueError(
+            "evaluate_interval needs meta['pair'] (the acquisition interval per row); "
+            "re-export the chip cache with the current make_chips")
+    with _limit_threads():
+        return _evaluate_interval(X, y, meta, clf_factory, replicates, seed,
+                                  blocks, n_train, classes)
+
+
+def _evaluate_interval(X, y, meta, clf_factory, replicates, seed, blocks,
+                       n_train, classes):
+    X = np.asarray(X, dtype=np.float64)
+    labs = sorted(classes if classes is not None else CLASSES)
+    if X.ndim != 2 or not len(X) or len(X) != len(y) or not np.isfinite(X).all():
+        raise ValueError("features must be a finite, nonempty (n, d) matrix matching labels")
+    pair = np.asarray(meta["pair"]).astype(str)
+    if pair.shape != (len(y),):
+        raise ValueError("meta['pair'] must carry one interval per row")
+    y_idx = np.array([labs.index(v) for v in y])
+    x, yy = np.asarray(meta["x"], float), np.asarray(meta["yy"], float)
+    intervals = sorted(set(pair))
+    if len(intervals) < 2:
+        raise ValueError("need at least two acquisition intervals to hold one out")
+
+    scores, coverage, pooled = [], [], []
+    for r in range(replicates):
+        rng = np.random.default_rng(seed + r)
+        cells = spatial_blocks(x, yy, blocks, rng.random(), rng.random())
+        truth, pred = [], []
+        for p in intervals:
+            idx_p = np.flatnonzero(pair == p)
+            if len(idx_p) < 2:
+                continue
+            # take whole cells until about half the interval's rows are held out
+            order = rng.permutation(np.unique(cells[idx_p]))
+            take, want, got = [], len(idx_p) // 2, 0
+            for c in order:
+                if got >= want:
+                    break
+                take.append(int(c))
+                got += int((cells[idx_p] == c).sum())
+            in_te = np.isin(cells[idx_p], take)
+            test = idx_p[in_te]
+            pool = np.flatnonzero((pair != p) & ~np.isin(cells, take))
+            if not len(test) or len(pool) < 2:
+                continue
+            tr = rng.choice(pool, size=min(n_train, len(pool)), replace=False)
+            if len(set(y_idx[tr])) < 2:
+                continue
+            clf = clf_factory()
+            clf.fit(X[tr], y_idx[tr])
+            truth.append(y_idx[test])
+            pred.append(clf.predict(X[test]))
+        if not truth:
+            raise ValueError("no interval produced a usable spatially blocked split")
+        truth, pred = np.concatenate(truth), np.concatenate(pred)
+        scores.append(f1_score(truth, pred, average="macro", labels=range(len(labs)),
+                               zero_division=0))
+        coverage.append(len(truth))
+        pooled.append((truth, pred))
+
+    res = Result(macro_f1=float(np.mean(scores)), sd=float(np.std(scores, ddof=1)),
+                 per_replicate=[float(s) for s in scores], n=int(np.mean(coverage)))
+    f1s = np.array([f1_score(t, p, average=None, labels=range(len(labs)),
+                             zero_division=0) for t, p in pooled])
+    prs = np.array([precision_recall_fscore_support(
+        t, p, labels=range(len(labs)), zero_division=0)[:2] for t, p in pooled])
+    for i, c in enumerate(labs):
+        res.per_class_f1[c] = float(f1s[:, i].mean())
+        res.per_class_pr[c] = (float(prs[:, 0, i].mean()), float(prs[:, 1, i].mean()))
+    res.confusion = confusion_matrix(*pooled[0], labels=range(len(labs)))
+    return res
 
 
 def compare(res_a, res_b, name_a="A", name_b="B", min_effect=MIN_EFFECT):
