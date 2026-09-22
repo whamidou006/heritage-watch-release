@@ -1,0 +1,11 @@
+# Reference environment; install the package itself for the console entry point.
+numpy==2.5.0
+scikit-learn==1.8.0
+torch==2.8.0
+rasterio==1.5.0
+timm==1.0.26
+satlaspretrain-models==0.3.1
+PyYAML==6.0.2
+joblib==1.5.3
+threadpoolctl==3.6.0
+pytest==9.0.2

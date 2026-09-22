@@ -1,0 +1,20 @@
+# Paths are relative to this config, unless HERITAGE_DATA_ROOT is absolute.
+imagery_dir: "${HERITAGE_DATA_ROOT:-../data/dataset}/herat_site_sat_images/herat_site_TM_z19"
+annotation_csv: "${HERITAGE_DATA_ROOT:-../data/dataset}/Herat_all_changes.csv"
+scene_date_regex: 'z19_(\d{4})-(\d{2})-(\d{2})\.tif$'
+columns:
+  fid: fid
+  category: category
+  layer: layer
+  year: year
+  x: "X "  # This trailing space is in the original CSV header.
+  y: Y
+classes: [New Construction, Solar Panel, Destruction, Temporary Structure]
+drop_categories: [Other, Reconstruction]
+pairing: month
+tolerance_days: 75
+chip_size: 128
+blocks: 6
+folds: 5
+replicates: 8
+min_effect: 0.02

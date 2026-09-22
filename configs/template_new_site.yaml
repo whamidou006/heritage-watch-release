@@ -1,0 +1,58 @@
+# Copy this file, then adapt it. Unknown fields are errors, not ignored options.
+# Paths resolve relative to THIS FILE, not the shell's working directory.
+# ${ENV_VAR} expansion is supported; ${ENV_VAR:-default} supplies a fallback.
+# The imagery must be north-up, 3-band uint8 RGB, with a common CRS, resolution,
+# and aligned pixel grid. Different scene footprints are allowed. Reproject and
+# co-register beforehand if necessary; we refuse to silently warp the inputs.
+# CRS comes from the rasters. CSV x/y MUST already use that CRS's coordinates.
+# No CRS field is accepted here.
+imagery_dir: ../data/new_site/images
+annotation_csv: ../data/new_site/points.csv
+
+# Exactly THREE capture groups: YYYY, MM, DD. Files are found via *.tif.
+# This example matches aerial_2023-10-16.tif. Change only to suit your filenames.
+scene_date_regex: 'aerial_(\d{4})-(\d{2})-(\d{2})\.tif$'
+
+# Map semantic fields to exact CSV headers. Whitespace is significant!
+# Herat uses x: "X " (trailing space); this example uses plain x and y.
+# CSV is UTF-8, comma-delimited. Decimal-comma values must be CSV-quoted.
+# fid: unique integer ID. category: labelled change at an already chosen point.
+# layer: e.g. change_between_202205_and_202310 (two YYYYMM tokens).
+# year: eight digits, e.g. "20222023", also required for year-only fallback.
+columns:
+  fid: id
+  category: change_class
+  layer: interval_layer
+  year: year_pair
+  x: x
+  y: y
+
+# Keep exactly these labels. Unknown categories are dropped with their own ledger
+# entries. Category values are stripped; header values are NOT stripped.
+# For transfer prediction, this list AND its order must match the model bundle.
+# For a new taxonomy train a new model; pretrained heads do not supply labels.
+classes: [New Construction, Solar Panel, Destruction, Temporary Structure]
+# Explicitly excluded categories get class_excluded:* ledger entries.
+drop_categories: [Other, Reconstruction]
+
+# month targets each stated YYYYMM's 15th, choosing the nearest scene within
+# tolerance_days. Ties prefer the earlier scene. Layers without two YYYYMM
+# tokens use year: latest in first year / earliest in second year.
+# year forces that historical rule (for provenance controls, not recommended).
+pairing: month
+tolerance_days: 75
+
+# Chip side in native pixels. Both dates must fit completely: NO zero-padding.
+# Match physical scale (~0.25 m/px in Herat), not just dimensions, for transfer.
+# Must match a trained bundle. Satlas needs dimensions compatible with its
+# backbone downsampling (use 128 for the reference workflow).
+chip_size: 128
+
+# Fixed-public-seed 100+r origin jitter, plus whole-cell StratifiedGroupKFold.
+# The reference grid spans sample coordinate extrema, not arbitrary scene bounds.
+# Leave these unchanged when claiming comparability with the published results.
+blocks: 6
+folds: 5
+replicates: 8
+# A resolved paired difference must be unanimous, >2*SE AND >= this effect.
+min_effect: 0.02
