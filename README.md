@@ -1,78 +1,117 @@
 # Heritage Watch
 
-**Semantic change classification at annotated points in bi-temporal aerial imagery.**
-This is not a change localiser, segmentation system, or a model trained from scratch.
-It classifies a before/after pair at a point already identified by an analyst.
+[![python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://github.com/whamidou006/heritage-watch-release)
+[![tests](https://img.shields.io/badge/tests-42%20passing-brightgreen)](tests)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-The reference study covers Herat Old City, Afghanistan, 2009–2025: 21 GeoTIFF
-scenes, 10 usable acquisition pairs, and 879 labels. Herat is on UNESCO's
-**Tentative List**, not an inscribed World Heritage Site. Nominal image resolution
-is 0.25 m/px; the geographic raster grid gives approximately 0.247 × 0.297 m pixels.
+Tell an analyst **what** changed at a point they already found.
 
-Frozen DINOv2 ViT-B/14 and SatlasPretrain Aerial Swin-v2-B encoders feed a balanced
-multinomial logistic-regression head. No encoder fine-tuning is performed.
-Labels are **points, not masks**.
+Given two aerial images of the same place — one earlier, one later — and a point
+an analyst has marked, it returns one of four labels: New Construction, Solar
+Panel, Destruction, Temporary Structure.
 
-## Installation
+It does **not** search the image for changes. The locations are supplied.
 
-Python 3.10+ is required. On a fresh machine:
+| | |
+|---|---:|
+| **Macro-F1** (4 classes, spatially blocked CV) | **0.726** |
+| Majority-class floor | 0.151 |
+| Labels in the reference study | 879 |
+
+```mermaid
+flowchart LR
+    classDef fn fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1.5px
+    classDef data fill:#f8fafc,stroke:#94a3b8,color:#334155
+    classDef out fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1.5px
+    classDef froz fill:#fef9c3,stroke:#ca8a04,color:#713f12,stroke-width:1.5px
+
+    T1[/"image at t1"/]:::data
+    T2[/"image at t2"/]:::data
+    PT[/"analyst's point<br/><i>lon · lat</i>"/]:::data
+    OUT[/"one of 4 classes<br/>+ probabilities"/]:::out
+
+    CHIP["<b>cut chip</b><br/>128 px window,<br/>same pixels in both"]:::fn
+    ENC["<b>frozen encoder</b><br/>DINOv2 · Satlas<br/><i>never fine-tuned</i>"]:::froz
+    REP["<b>represent</b><br/>f_mi ‖ (f_t2 − f_t1)<br/><i>restores time direction</i>"]:::fn
+    HEAD["<b>logistic head</b><br/>the only trained part"]:::fn
+
+    T1 --> CHIP
+    T2 --> CHIP
+    PT --> CHIP
+    CHIP --> ENC --> REP --> HEAD --> OUT
+```
+
+Destruction and New Construction are the *same* two ground states in opposite
+order. Telling them apart is the central difficulty — and the reason the
+representation carries an explicit signed time difference.
+
+## What it does
+
+| | |
+|---|---|
+| **Classify a marked point** | four change classes from a before/after pair |
+| **Frozen encoders** | DINOv2 ViT-B/14 and SatlasPretrain Aerial Swin-v2-B; no fine-tuning, no GPU training |
+| **Honest protocol** | spatially blocked CV so neighbouring rooftops cannot straddle a fold |
+| **A decision rule** | a difference counts only if it is unanimous, beats 2·SE, *and* reaches 0.02 |
+| **Train on your own site** | one YAML template, four commands |
+| **Transfer to a new site** | apply a trained bundle elsewhere, with compatibility checked before scoring |
+| **Reproducible caches** | embeddings computed once; every published number re-fits in seconds |
+
+Labels are **points, not masks**. This is not a change *localiser*, not
+segmentation, and nothing is trained from scratch.
+
+---
+
+## Install
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-python -m pip install -e .
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
+
 heritage-watch --help
+pytest -q                     # 42 tests, no data / weights / GPU needed
 ```
 
-The reference environment is Python 3.12, NumPy 2.5, sklearn 1.8, torch 2.8,
-rasterio 1.5 and timm 1.0.26. Encoder weights may download on first use;
-their licenses are separate from this MIT-licensed code. The data, features,
-annotations and pretrained weights are **not included** and are not licensed
-by this repository. Obtain authorized copies from the dataset custodians.
-There is no public dataset URL or paper DOI asserted here.
+No install? `export PYTHONPATH=src` and replace `heritage-watch` with
+`python -u -m heritage_watch.cli` everywhere below.
 
-Without installation, use existing dependencies:
+**Data is not included.** Obtain authorized copies from the dataset custodians;
+encoder weights download on first use under their own licenses. There is no
+public dataset URL or paper DOI.
 
-```bash
-export PYTHONPATH=src
-python -u -m heritage_watch.cli --help
-```
+## Quickstart
 
-All commands below can replace `heritage-watch` with `python -u -m heritage_watch.cli`.
-Cache evaluation is CPU-only and does not load encoders. BLAS is capped at four
-threads at import and call time; `HERITAGE_THREADS=2` can reduce shared-host load.
-Embedding defaults to CPU. GPU use is explicit, for example
-`CUDA_VISIBLE_DEVICES=3 heritage-watch embed ... --device cuda`. Never assume
-that a GPU is free. No full extraction or seven-model sweep is needed for a smoke test.
-
-## 1. Reproduce the study
-
-Put the authorized dataset at `data/dataset/`, or set `HERITAGE_DATA_ROOT` to
-its absolute root. It must contain `Herat_all_changes.csv` and
-`herat_site_sat_images/herat_site_TM_z19/*.tif`. Relative paths in YAML resolve
-relative to the YAML file, not the working directory.
+Point `HERITAGE_DATA_ROOT` at a dataset containing `Herat_all_changes.csv` and
+`herat_site_sat_images/herat_site_TM_z19/*.tif`, then:
 
 ```bash
+# 1. which points are usable, and why the others were dropped
 heritage-watch manifest --config configs/herat.yaml --out cache/manifest.json
-# Expect 879: New Construction 380, Solar Panel 308, Destruction 138,
-# Temporary Structure 53. Every removed row has a ledger reason.
+# → 879: New Construction 380, Solar Panel 308, Destruction 138, Temporary 53
 
-# With authorized precomputed 128px, month-paired features in cache/:
+# 2. score the selected representation
 heritage-watch evaluate --config configs/herat.yaml \
   --features cache/features_month.npz cache/features_satlas_month.npz \
   --representation satlas_mi_si_diff
+# → macro-F1 0.7259
+```
 
-# Full seven-row table; substantially more expensive than one evaluation:
-heritage-watch reproduce --config configs/herat.yaml --from-cache cache/
-# Equivalent: python -u scripts/reproduce_results.py --config configs/herat.yaml --from-cache cache/
+Every dropped row carries a ledger reason. Relative paths inside a YAML resolve
+against the YAML file, not your working directory.
 
-heritage-watch compare --config configs/herat.yaml \
+## The three things you can do
+
+### 1. Reproduce the study
+
+```bash
+heritage-watch reproduce --config configs/herat.yaml --from-cache cache/   # all 7 rows
+heritage-watch compare   --config configs/herat.yaml \
   --features cache/features_month.npz cache/features_satlas_month.npz \
   --a satlas_mi_si_diff --b merged
 ```
 
-For extraction from scratch, omit `--from-cache` on `reproduce`, or run:
+To build features from scratch, drop `--from-cache`, or run `embed` yourself:
 
 ```bash
 heritage-watch embed --config configs/herat.yaml --manifest cache/manifest.json \
@@ -81,53 +120,44 @@ heritage-watch embed --config configs/herat.yaml --manifest cache/manifest.json 
   --encoder satlas --out cache/features_satlas_month.npz
 ```
 
-The caches contain `f1`, `f2`, Satlas `fmi`, and `y`, `pair`, `x`, `yy`, `fid`.
-New caches also record encoder and chip size. Legacy caches lack chip-size
-provenance: loading warns, and the caller must independently verify the extraction
-size. All cache rows and metadata must agree exactly; we never assume a row-order
-join is safe. Never load an untrusted joblib model.
+### 2. Train on your own site
 
-## 2. Train on new data
-
-Copy `configs/template_new_site.yaml`, adapt its paths, exact CSV headers,
-taxonomy, and scene-date regex. Then:
+Copy `configs/template_new_site.yaml` and adapt paths, CSV headers, taxonomy and
+the scene-date regex.
 
 ```bash
 heritage-watch manifest --config configs/my_site.yaml --out cache/my_manifest.json
-heritage-watch embed --config configs/my_site.yaml --manifest cache/my_manifest.json \
+heritage-watch embed    --config configs/my_site.yaml --manifest cache/my_manifest.json \
   --encoder satlas --out cache/my_satlas.npz
 heritage-watch evaluate --config configs/my_site.yaml \
   --features cache/my_satlas.npz --representation satlas_mi_si_diff
-heritage-watch train --config configs/my_site.yaml \
+heritage-watch train    --config configs/my_site.yaml \
   --features cache/my_satlas.npz --representation satlas_mi_si_diff --out out/model.joblib
 ```
 
-Training fits the head on **all** labels; it is not a new test score. The bundle
-includes class order, representation, required encoders, chip size, feature
-dimension, software version and a SHA-256 fingerprint of the ordered training
-metadata and features.
+`train` fits on **all** labels — its output is a model, **not a test score**. The
+bundle records class order, representation, required encoders, chip size, feature
+dimension, version, and a SHA-256 fingerprint of the ordered training data.
 
-## 3. Evaluate transfer to another site
+### 3. Evaluate transfer to another site
 
-Use the **same taxonomy, class order and chip size** with new-site imagery and
-labelled evaluation points, and comparable physical resolution:
+Requires the **same taxonomy, class order and chip size**, and comparable ground
+resolution.
 
 ```bash
 heritage-watch predict --model out/model.joblib \
   --config configs/new_site.yaml --out out/predictions.csv
 ```
 
-Prediction rebuilds the new manifest and uses exactly the bundle's encoders and
-representation. Incompatible metadata or feature dimensions cause an error
-before scoring. Output contains point IDs, true labels, predictions, dates and
-uncalibrated probabilities. Compute transfer macro-F1 as described in
-[NEW_SITE.md](docs/NEW_SITE.md). Running `evaluate` instead measures
-**within-new-site CV**, not transfer of the already trained model.
+Incompatible metadata or feature dimensions raise an error *before* scoring.
+Compute transfer macro-F1 as in [NEW_SITE.md](docs/NEW_SITE.md).
 
-## Published results
+> ⚠️ Running `evaluate` on the new site measures **within-site CV**, not transfer.
 
-Eight paired jittered-grid replicates, five spatially grouped folds, n=879.
-Macro-F1 averages the four classes equally; majority-class floor **0.151**.
+## Results
+
+Eight paired jittered-grid replicates, five spatially grouped folds, n = 879.
+Macro-F1 weights the four classes equally; majority floor **0.151**.
 
 | Representation | CLI name | dim | Macro-F1 |
 |---|---|---:|---:|
@@ -139,56 +169,80 @@ Macro-F1 averages the four classes equally; majority-class floor **0.151**.
 | **Satlas-MI + SI diff (selected)** | `satlas_mi_si_diff` | **3840** | **0.7259** |
 | Merged DINOv2 + Satlas | `merged` | 8064 | 0.7062 |
 
-The selected representation is `[f_mi, f_si_t2 - f_si_t1]`. MI alone max-pools
-over time and is order-invariant; the signed SI difference restores direction.
-Satlas's four feature-pyramid levels are global-average-pooled and concatenated.
-DINOv2 resizes native 128px chips to 224px with ImageNet normalization;
-Satlas uses native chips scaled to [0,1].
+Satlas-MI max-pools over time, so it is order-invariant and cannot by itself
+separate Destruction from New Construction. The signed difference
+`f_si_t2 − f_si_t1` restores direction. Satlas's four pyramid levels are
+global-average-pooled and concatenated; DINOv2 resizes 128 px chips to 224 px
+with ImageNet normalization, while Satlas uses native chips scaled to `[0,1]`.
 
-**The top two are not separated.** The selected system wins 8/8 paired replicates
-by +0.0197, above 2·SE but **0.0003 below** the 0.02 minimum effect. Selection is
-on parsimony: 3840 dimensions and one encoder *family* (SI and MI checkpoints),
-versus 8064 dimensions and two encoder families.
+**The top two are not separated.** The selected system wins 8/8 replicates by
++0.0197 — above 2·SE, but **0.0003 below** the 0.02 minimum effect. It is chosen
+on parsimony: 3840 dimensions and one encoder family, versus 8064 and two.
 
-Important limits:
+## Honest limits
 
-- The YYYY-versus-YYYYMM provenance bug was fixed. Its strictly paired effect,
-  +0.0067 on 811 shared points, is inside the noise floor: **score-neutral,
-  justified on provenance, not accuracy**. Different dataset versions contain
-  different populations; their headline changes cannot be attributed to this fix.
-- Spatial blocking is not time blocking. All acquisition pairs appear on both
+<details>
+<summary><b>Read before quoting any number</b></summary>
+
+- **Spatial blocking is not time blocking.** All acquisition pairs appear on both
   sides of every fold. The report's leave-one-interval-out diagnostic is
-  directionally clear — a held-out interval is worse in 9 of 10 cases — but it
-  was run on the **superseded 838-sample manifest**, its test rows are drawn
-  **randomly within the interval rather than spatially blocked**, and it scores
-  only the classes present in each subset. It therefore supports "temporal
-  generalisation is materially worse than the headline" and **no specific
-  number**. Do not quote a macro-F1 penalty from it.
-- Destruction is weak: published fixed-grid F1 **0.548**, **50.0%** correct and
-  **41.3%** read as New Construction—opposite temporal orders of the same states.
-  Those fixed-grid per-class numbers use a different averaging scheme from the
-  jittered headline and need not equal `report()`'s per-class outputs.
-- Encoders are frozen and untuned: **0.7259 is a lower bound, not a ceiling**
-  on achievable performance in this setting, not a guaranteed deployment score.
-- Site-specific performance and probabilities are not deployment assurances.
-  New-site quantitative claims require independent ground truth.
+  directionally clear — a held-out interval is worse in 9 of 10 cases — but those
+  published figures came from the superseded 838-sample manifest with test rows
+  drawn *randomly* within the interval. `scripts/controls.py` now draws whole
+  spatial cells and withholds them from both arms; that corrected diagnostic has
+  not yet been published. The claim supported is "temporal generalisation is
+  materially worse than the headline" and **no specific number**.
+- **Destruction is weak.** Fixed-grid F1 **0.548**; **50.0 %** correct, **41.3 %**
+  read as New Construction — the opposite temporal order of the same states.
+  Those fixed-grid per-class figures use a different averaging scheme from the
+  jittered headline and need not match `report()`.
+- **Provenance fix was score-neutral.** Reading the layer month rather than the
+  year changed which scenes back each pair; the strictly paired effect is
+  +0.0067 on 811 shared points, inside the noise floor. Adopted on provenance,
+  not accuracy. Different dataset versions hold different populations, so their
+  headline differences cannot be attributed to this fix.
+- **0.7259 is a lower bound, not a ceiling.** Encoders are frozen and untuned.
+- **Not a deployment assurance.** Probabilities are uncalibrated, and any
+  new-site claim needs independent ground truth.
 
-See [protocol and decision rule](docs/PROTOCOL.md), [results and solver
-fidelity](docs/RESULTS.md), and [new-site instructions](docs/NEW_SITE.md).
+</details>
 
-## Tests and citation
+## Reference study
 
-```bash
-PYTHONPATH=src python -u -m pytest tests/ -q
-```
+Herat Old City, Afghanistan, 2009–2025 — 21 GeoTIFF scenes, 10 usable
+acquisition pairs, 879 labels. Herat is on UNESCO's **Tentative List**, not an
+inscribed World Heritage Site. Nominal resolution 0.25 m/px; the geographic
+raster grid gives ≈0.247 × 0.297 m pixels, so the 128 px chip spans ≈32 × 38 m.
 
-Tests create synthetic GeoTIFFs under ignored `out/pytest-work/`, never in a
-system temporary directory. They require no real data, downloaded weights or GPU.
+## Notes on running
 
-Until a paper identifier is supplied, cite the software without inventing one:
+| | |
+|---|---|
+| **Threads** | BLAS capped at 4 at import and call time; `HERITAGE_THREADS=2` on a shared host |
+| **Device** | embedding defaults to CPU; GPU is explicit — `CUDA_VISIBLE_DEVICES=3 heritage-watch embed … --device cuda` |
+| **Cache contents** | `f1`, `f2`, Satlas `fmi`, plus `y`, `pair`, `x`, `yy`, `fid` |
+| **Cache safety** | rows and metadata must agree exactly — a row-order join is never assumed safe. Legacy caches lack chip-size provenance and warn on load |
+| **Never** | load an untrusted joblib bundle |
+
+Evaluating from cache is CPU-only and loads no encoders. A smoke test needs
+neither full extraction nor the seven-model sweep.
+
+Reference environment: Python 3.12, NumPy 2.5, sklearn 1.8, torch 2.8,
+rasterio 1.5, timm 1.0.26.
+
+## More
+
+[Protocol and decision rule](docs/PROTOCOL.md) ·
+[Results and solver fidelity](docs/RESULTS.md) ·
+[New-site instructions](docs/NEW_SITE.md) ·
+[Contributing](CONTRIBUTING.md) · [License](LICENSE)
+
+Tests build synthetic GeoTIFFs under ignored `out/pytest-work/`, never in a
+system temp directory.
+
+Until a paper identifier exists, cite the software — do not invent one:
 
 > Heritage Watch contributors. *Heritage Watch: Semantic Change Classification
 > on Bi-temporal Aerial Imagery*. Software, version 1.0.0, 2026.
 
-Also cite the original DINOv2 and SatlasPretrain work when using those encoders.
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [LICENSE](LICENSE).
+Please also cite the original DINOv2 and SatlasPretrain work.
