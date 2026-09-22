@@ -323,6 +323,30 @@ the only way to measure the real thing is a second site.
 The practical reading: the headline in §5 is blocked in space but only partially in time, and
 generalising to a genuinely new acquisition should be expected to cost **at least** 0.07 macro-F1.
 
+**A second estimator of the same quantity, and why it is larger.** The released benchmark
+(`evaluate_interval`) measures this differently: it holds out each interval in turn, takes whole
+spatial cells as test, withholds those cells from training, and then **pools predictions across all
+ten intervals** before computing one macro-F1 over the fixed four classes. Its matched control is
+the same function run with the interval labels shuffled — identical capped training pool, identical
+cell blocking, no date structure. Measured on the selected configuration at 64 px:
+
+| Arm | macro-F1 |
+|---|---:|
+| Headline (§5, spatially blocked only) | 0.7792 |
+| Interval machinery, interval labels shuffled | 0.7392 |
+| Interval machinery, real intervals | 0.5745 |
+
+So the smaller, doubly-blocked training pool costs 0.040 and **date novelty costs 0.165**.
+
+That is more than twice the −0.0719 above, and the two are not in conflict — they are different
+estimators. The table above averages a per-interval macro-F1 taken over *whichever classes appear
+in that interval*; an interval holding three classes is scored on three. Pooling first and scoring
+over the fixed four removes that compression and is the stricter, more honest measurement, which is
+why the released benchmark uses it. Neither number is wrong, but **0.165 is the one to quote**, and
+the −0.0719 should be read as what the older per-interval estimator reports on the same data.
+
+Both remain lower bounds for the same reason: the scenes chain.
+
 **Metric — macro-F1** over four classes, so the 53-sample Temporary Structure class carries the
 same weight as the 380-sample New Construction class. Majority-class floor **0.151**.
 
@@ -614,7 +638,7 @@ What remains, in priority order:
    lever measured here, and every appendix ablation predates it. Their *directions* are unlikely to
    change — most are large — but none of their absolute numbers should be quoted.
 2. **Measure on a second site.** The interval control in §4 establishes that a new acquisition costs
-   at least 0.07 macro-F1, but it cannot do better than a lower bound, because the scenes chain and
+   at least 0.165 macro-F1, but it cannot do better than a lower bound, because the scenes chain and
    no date-disjoint hold-out exists in this archive. Every remaining question about generalisation
    is blocked on data, not on method.
 3. **Ablate the Solar Panel date shortcut directly** — how much of its 0.915 survives when the

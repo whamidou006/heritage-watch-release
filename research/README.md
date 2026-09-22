@@ -62,3 +62,21 @@ Two of those four had been reported as *resolved* under the same rule that now r
 The rule catches under-powered claims; it does not catch wrongly-controlled ones. Only a
 control with the same blocking as the thing it controls does that — see the leave-one-interval-out
 result in `REPORT.md` §4, which halved once both of its arms were spatially blocked.
+
+## What moved to `main`
+
+Three results from this branch are now part of the released protocol, so they are
+no longer research-only:
+
+| Result | Where it lives on `main` |
+|---|---|
+| Chip size 64 px, not 128 px (+0.0885, 8/8) | the default in `configs/herat.yaml`, and every regenerated table |
+| Held-out acquisition as a required second score | `protocol.evaluate_interval`, `heritage-watch interval` |
+| The date shortcut, and what removes it | `scripts/baselines.py`, `docs/BENCHMARK.md` |
+
+The second score is measured differently from the leave-one-interval-out table in
+`REPORT.md` §4: it pools predictions across intervals before scoring, over the
+fixed four classes, rather than averaging a per-interval macro-F1 taken over
+whichever classes that interval happens to contain. That is why it reports a
+larger penalty (0.165 against 0.072) on the same data. §4 states the
+reconciliation; the pooled figure is the one to quote.
