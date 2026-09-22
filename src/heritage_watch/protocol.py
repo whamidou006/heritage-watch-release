@@ -185,15 +185,18 @@ def _evaluate(X, y, meta, clf_factory, replicates, seed=_SEED,
         oofs.append(oof)
         grids.append(g)
 
-    res = Result(macro_f1=float(np.mean(scores)), sd=float(np.std(scores)),
+    res = Result(macro_f1=float(np.mean(scores)), sd=float(np.std(scores, ddof=1)),
                  per_replicate=[float(s) for s in scores], n=len(y_idx), pairing_id=pairing)
     f1s = np.array([f1_score(y_idx, o, average=None, labels=range(len(labs)))
                     for o in oofs])
+    # precision/recall are averaged over the SAME replicates as F1; taking them
+    # from replicate 0 while averaging F1 produces a table whose columns do not
+    # describe the same experiment.
+    prs = np.array([precision_recall_fscore_support(
+        y_idx, o, labels=range(len(labs)), zero_division=0)[:2] for o in oofs])
     for i, c in enumerate(labs):
-        p, r_, f_, _ = precision_recall_fscore_support(
-            y_idx, oofs[0], labels=range(len(labs)), zero_division=0)
         res.per_class_f1[c] = float(f1s[:, i].mean())
-        res.per_class_pr[c] = (float(p[i]), float(r_[i]))
+        res.per_class_pr[c] = (float(prs[:, 0, i].mean()), float(prs[:, 1, i].mean()))
     res.confusion = confusion_matrix(y_idx, oofs[0], labels=range(len(labs)))
     res._oofs, res._y = oofs, y_idx  # kept for compare()
     return res
@@ -229,8 +232,11 @@ def compare(res_a, res_b, name_a="A", name_b="B", min_effect=MIN_EFFECT):
     d = a - b
     n = len(d)
     wins = int((d > 0).sum())
-    se = d.std() / np.sqrt(n)
-    print(f"\npaired {name_a} - {name_b}: {d.mean():+.4f} (sd {d.std():.4f}), "
+    # sample SD (ddof=1): with 6-8 replicates the population SD understates the
+    # spread by ~7-9 %, which is enough to flip a borderline verdict.
+    sd = d.std(ddof=1)
+    se = sd / np.sqrt(n)
+    print(f"\npaired {name_a} - {name_b}: {d.mean():+.4f} (sd {sd:.4f}), "
           f"{name_a} wins {wins}/{n}")
     unanimous = bool(np.all(d > 0) or np.all(d < 0))
     if unanimous and abs(d.mean()) > 2 * se and abs(d.mean()) >= min_effect:
@@ -252,7 +258,8 @@ def report(res: Result, title="result"):
     print(f"n = {res.n}   macro-F1 = {res.macro_f1:.4f} +/- {res.sd:.4f} "
           f"over {len(res.per_replicate)} replicates")
     print(f"  replicates: " + " ".join(f"{s:.3f}" for s in res.per_replicate))
-    print(f"\n{'class':<22}{'P':>8}{'R':>8}{'F1':>8}")
+    print(f"\n{'class':<22}{'P':>8}{'R':>8}{'F1':>8}    (all averaged over "
+          f"{len(res.per_replicate)} replicates)")
     for c in labs:
         p, r = res.per_class_pr[c]
         print(f"{c:<22}{p:>8.3f}{r:>8.3f}{res.per_class_f1[c]:>8.3f}")

@@ -74,3 +74,33 @@ def test_repeatability_and_fingerprint(feature_data):
     assert a.pairing_id == b.pairing_id
     c = evaluate(X, meta["y"], dict(meta), seed=200, **kwargs)
     assert a.pairing_id != c.pairing_id
+
+
+def test_compare_uses_sample_standard_error(capsys):
+    """2*SE must use the sample SD (ddof=1).
+
+    With the population SD a two-replicate difference of [0.0063, 0.0357] gets
+    2*SE = 0.0208 and is declared resolved; the sample SD gives 0.0294 and it is
+    not. Borderline verdicts flip on this choice, so it is pinned here.
+    """
+    a = Result(macro_f1=0.021, sd=0.0, per_replicate=[0.0063, 0.0357], pairing_id="p")
+    b = Result(macro_f1=0.0, sd=0.0, per_replicate=[0.0, 0.0], pairing_id="p")
+    compare(a, b, "a", "b", min_effect=0.02)
+    out = capsys.readouterr().out
+    assert "resolved:" not in out
+
+
+def test_per_class_precision_recall_average_over_all_replicates():
+    """P, R and F1 in the per-class table must describe the same experiment."""
+    rng = np.random.default_rng(0)
+    n = 160
+    y = np.array(["A", "B", "C", "D"] * (n // 4))
+    X = rng.normal(size=(n, 6)) + (y == "A")[:, None]
+    meta = {"x": rng.random(n), "yy": rng.random(n)}
+    res = evaluate(X, y, meta, replicates=3, classes=["A", "B", "C", "D"])
+    assert len(res.per_replicate) == 3
+    # replicate-0-only P/R would make these disagree with the averaged F1 harmonically
+    for c in res.per_class_f1:
+        p, r = res.per_class_pr[c]
+        assert 0.0 <= p <= 1.0 and 0.0 <= r <= 1.0
+    assert res.sd == pytest.approx(np.std(res.per_replicate, ddof=1))

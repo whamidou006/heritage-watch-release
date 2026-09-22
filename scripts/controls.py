@@ -14,7 +14,8 @@ from sklearn.metrics import f1_score
 
 from heritage_watch.config import load_config
 from heritage_watch.features import assemble, load_features
-from heritage_watch.protocol import _limit_threads, default_classifier, evaluate, report
+from heritage_watch.protocol import (_limit_threads, default_classifier, evaluate,
+                                     report, spatial_blocks)
 
 
 def date_only(config, meta):
@@ -30,10 +31,11 @@ def date_only(config, meta):
                 per_replicate=result.per_replicate, majority_floor=float(floor))
 
 
-def loio(config, X, meta, manifest, reps=6, n_train=500):
+def loio(config, X, meta, manifest, cells, reps=6, n_train=500):
     if reps < 2 or n_train < 2:
         raise ValueError("LOIO needs at least two replicates and two training rows")
     pair, y = meta["pair"], meta["y"]
+    cells = np.asarray(cells)
     records = {r["fid"]: r for r in manifest["records"]}
     endpoints = {}
     for fid, p in zip(meta["fid"], pair):
@@ -46,40 +48,69 @@ def loio(config, X, meta, manifest, reps=6, n_train=500):
     results = {}
     with _limit_threads():
         for p in sorted(set(pair)):
-            idx_p, idx_o = np.flatnonzero(pair == p), np.flatnonzero(pair != p)
-            if len(idx_p) < 2 or len(idx_o) < n_train:
-                raise ValueError(f"interval {p}: too few rows for requested train/test sizes")
-            seen, unseen = [], []
+            idx_p = np.flatnonzero(pair == p)
+            if len(idx_p) < 2:
+                raise ValueError(f"interval {p}: too few rows to split")
+            seen, unseen, sizes = [], [], []
             for r in range(reps):
                 rng = np.random.default_rng(7000 + 13 * r)
-                perm = rng.permutation(idx_p)
-                test, rest = perm[:len(perm) // 2], perm[len(perm) // 2:]
-                un = rng.choice(idx_o, size=n_train, replace=False)
-                k = min(len(rest), n_train)
-                se = np.concatenate([rest[:k], rng.choice(idx_o, size=n_train-k, replace=False)])
+                # Test rows are WHOLE spatial cells, and those cells are removed
+                # from both arms' training pools. Splitting an interval's rows at
+                # random instead would put training rows metres from test rows,
+                # so the contrast would measure proximity, not date novelty.
+                order = rng.permutation(np.unique(cells[idx_p]))
+                take, want = [], len(idx_p) // 2
+                for c in order:
+                    if sum(int((cells[idx_p] == t).sum()) for t in take) >= want:
+                        break
+                    take.append(c)
+                te_cells = set(int(c) for c in take)
+                in_te = np.isin(cells[idx_p], list(te_cells))
+                test, rest = idx_p[in_te], idx_p[~in_te]
+                if len(test) == 0 or len(rest) == 0:
+                    continue
+                pool = np.flatnonzero((pair != p) & ~np.isin(cells, list(te_cells)))
+                n_tr = min(n_train, len(pool))
+                if n_tr < 2:
+                    raise ValueError(f"interval {p}: training pool exhausted by test cells")
+                un = rng.choice(pool, size=n_tr, replace=False)
+                k = min(len(rest), n_tr)
+                se = np.concatenate([rest[:k], rng.choice(pool, size=n_tr - k, replace=False)])
                 for train, scores in ((un, unseen), (se, seen)):
                     if len(set(y[train])) < 2:
                         raise ValueError(f"interval {p}: training arm contains fewer than two classes")
                     clf = default_classifier().fit(X[train], y[train])
                     scores.append(f1_score(y[test], clf.predict(X[test]), average="macro",
                                            labels=np.unique(y[test]), zero_division=0))
+                sizes.append((int(n_tr), int(len(test))))
+            if not seen:
+                raise ValueError(f"interval {p}: no usable spatially blocked split")
             delta = np.asarray(unseen) - seen
             shares = any(endpoints[p] & endpoints[q] for q in endpoints if q != p)
             results[str(p)] = dict(seen=seen, unseen=unseen, delta=float(delta.mean()),
-                                   shares_endpoint=shares, n_test=len(test))
+                                   shares_endpoint=shares,
+                                   n_test_mean=float(np.mean([s[1] for s in sizes])),
+                                   n_train_mean=float(np.mean([s[0] for s in sizes])),
+                                   n_train_min=int(min(s[0] for s in sizes)),
+                                   reps_used=len(seen))
             print(f"{p}: seen={np.mean(seen):.4f} unseen={np.mean(unseen):.4f} "
                   f"delta={delta.mean():+.4f} shares_endpoint={shares}", flush=True)
     deltas = np.array([v["delta"] for v in results.values()])
     clean = [v["delta"] for v in results.values() if not v["shares_endpoint"]]
-    se2 = 2 * deltas.std() / np.sqrt(len(deltas))
+    # sample SD: n here is the number of intervals, typically 10
+    se2 = 2 * deltas.std(ddof=1) / np.sqrt(len(deltas))
     unanimous = bool(np.all(deltas < 0) or np.all(deltas > 0))
     out = dict(per_interval=results, mean_delta=float(deltas.mean()), two_se=float(se2),
+               se_over="interval means",
                resolved=bool(unanimous and abs(deltas.mean()) > se2
                              and abs(deltas.mean()) >= config.min_effect),
                clean_only_delta=float(np.mean(clean)) if clean else None,
-               reps=reps, n_train=n_train)
+               reps=reps, n_train_cap=n_train)
     print(f"mean unseen-seen: {deltas.mean():+.4f}; 2*SE={se2:.4f}; "
           f"resolved={out['resolved']}; no-shared-endpoint intervals={len(clean)}")
+    if not clean:
+        print("  no interval is endpoint-clean: the resolved scenes chain, so every "
+              "'unseen' arm has still seen one endpoint image via a neighbouring pair")
     return out
 
 
@@ -102,8 +133,9 @@ def main():
         else:
             if not args.manifest:
                 ap.error("loio requires --manifest")
+            cells = spatial_blocks(meta["x"], meta["yy"])
             result = loio(config, assemble(blocks, args.representation), meta,
-                          json.loads(Path(args.manifest).read_text()),
+                          json.loads(Path(args.manifest).read_text()), cells,
                           args.replicates, args.train_size)
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
