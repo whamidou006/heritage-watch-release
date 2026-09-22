@@ -83,10 +83,15 @@ scores; small numerical deviations from the printed table can occur.
   comparison on 811 common points measured +0.0067, inside the noise floor:
   **score-neutral; adopted for provenance, not accuracy**. Scores across
   dataset versions cannot isolate this effect because the populations differ.
-- Generalisation across time is materially worse. The report's matched
-  leave-one-interval-out estimate was −0.1755 overall (9/10 intervals worse);
-  its conservative reported subset was approximately **−0.11 macro-F1**.
-  Non-unanimity means this is not “resolved” under the three-bar rule.
+- Generalisation across time is materially worse, but by an unmeasured amount.
+  The report's leave-one-interval-out diagnostic gave −0.1755 overall (9/10
+  intervals worse) and −0.1110 on a subset. **Neither figure is quotable as a
+  correction to the headline**: it ran on the superseded 838-sample manifest
+  (whose interval list still contains `20122013`, absent from the corrected
+  data), neither arm is spatially blocked — test rows are a random permutation
+  within the interval — and F1 is computed over the classes present in each
+  subset rather than the fixed four. Non-unanimity independently rules out
+  "resolved" under the three-bar rule.
 - The historical LOIO script used a hardcoded “shared endpoint” interval set.
   The release control derives endpoint sharing from actual scene paths instead.
   Month-corrected pairs chain more often, so the subset can change or disappear;

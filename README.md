@@ -156,9 +156,14 @@ Important limits:
   +0.0067 on 811 shared points, is inside the noise floor: **score-neutral,
   justified on provenance, not accuracy**. Different dataset versions contain
   different populations; their headline changes cannot be attributed to this fix.
-- Spatial blocking is not time blocking. The report's leave-one-interval-out
-  diagnostic indicates roughly **−0.11 macro-F1** conservatively; temporal
-  generalisation is materially worse than the headline suggests.
+- Spatial blocking is not time blocking. All acquisition pairs appear on both
+  sides of every fold. The report's leave-one-interval-out diagnostic is
+  directionally clear — a held-out interval is worse in 9 of 10 cases — but it
+  was run on the **superseded 838-sample manifest**, its test rows are drawn
+  **randomly within the interval rather than spatially blocked**, and it scores
+  only the classes present in each subset. It therefore supports "temporal
+  generalisation is materially worse than the headline" and **no specific
+  number**. Do not quote a macro-F1 penalty from it.
 - Destruction is weak: published fixed-grid F1 **0.548**, **50.0%** correct and
   **41.3%** read as New Construction—opposite temporal orders of the same states.
   Those fixed-grid per-class numbers use a different averaging scheme from the

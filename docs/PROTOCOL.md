@@ -74,10 +74,15 @@ They are an empirical calibration on Herat, not a guarantee for every site.
 ## What this does not establish
 
 The headline blocks **space, not time**; all acquisition pairs can appear in
-training and testing. The reported size-matched temporal diagnostic yielded
-−0.1755 averaged over all ten intervals (9/10 worse), and a reported conservative
-−0.1110 subset estimate. The non-unanimity means “large, consistently signed,”
-not “resolved.” Do not mistake 0.7259 for unseen-interval performance.
+training and testing. The temporal diagnostic reported alongside it (−0.1755
+averaged over ten intervals, 9/10 worse; −0.1110 on a subset) is **exploratory
+and not comparable to the headline**: it was measured on the superseded
+838-sample manifest, its held-out test rows are drawn by random permutation
+*within* the interval rather than spatially blocked, and it is scored over
+whichever classes appear in each subset rather than the fixed four. One interval
+also dissents, so it is not "resolved" in any case. Read it as evidence that
+holding out an interval hurts, repeatedly and substantially — not as a
+quantified penalty. Do not mistake 0.7259 for unseen-interval performance.
 
 For competitive evaluation, the original protocol recommends final scoring
 under an unpublished jitter seed to reduce partition tuning. This repository
