@@ -1,7 +1,7 @@
 # Heritage Watch
 
 [![python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://github.com/whamidou006/heritage-watch-release)
-[![tests](https://img.shields.io/badge/tests-42%20passing-brightgreen)](tests)
+[![tests](https://img.shields.io/badge/tests-46%20passing-brightgreen)](tests)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 Tell an analyst **what** changed at a point they already found.
@@ -12,11 +12,16 @@ Panel, Destruction, Temporary Structure.
 
 It does **not** search the image for changes. The locations are supplied.
 
+**Working on this as a student or a benchmark entrant?** Start with
+[the benchmark](docs/BENCHMARK.md): two fixed scores, four baselines to beat,
+and the rule for when a difference is real.
+
 | | |
 |---|---:|
-| **Macro-F1** (4 classes, spatially blocked CV) | **0.726** |
+| **Macro-F1**, another building (spatially blocked CV) | **0.779** |
+| **Macro-F1**, an unseen acquisition | **0.574** |
 | Majority-class floor | 0.151 |
-| Labels in the reference study | 879 |
+| Labels in the reference study | 882 |
 
 ```mermaid
 flowchart LR
@@ -30,7 +35,7 @@ flowchart LR
     PT[/"analyst's point<br/><i>lon · lat</i>"/]:::data
     OUT[/"one of 4 classes<br/>+ probabilities"/]:::out
 
-    CHIP["<b>cut chip</b><br/>128 px window,<br/>same pixels in both"]:::fn
+    CHIP["<b>cut chip</b><br/>64 px window,<br/>same pixels in both"]:::fn
     ENC["<b>frozen encoder</b><br/>DINOv2 · Satlas<br/><i>never fine-tuned</i>"]:::froz
     REP["<b>represent</b><br/>f_mi ‖ (f_t2 − f_t1)<br/><i>restores time direction</i>"]:::fn
     HEAD["<b>logistic head</b><br/>the only trained part"]:::fn
@@ -88,13 +93,19 @@ Point `HERITAGE_DATA_ROOT` at a dataset containing `Herat_all_changes.csv` and
 ```bash
 # 1. which points are usable, and why the others were dropped
 heritage-watch manifest --config configs/herat.yaml --out cache/manifest.json
-# → 879: New Construction 380, Solar Panel 308, Destruction 138, Temporary 53
+# → 882: New Construction 382, Solar Panel 309, Destruction 138, Temporary 53
 
 # 2. score the selected representation
 heritage-watch evaluate --config configs/herat.yaml \
   --features cache/features_month.npz cache/features_satlas_month.npz \
   --representation satlas_mi_si_diff
-# → macro-F1 0.7259
+# → macro-F1 0.7788
+
+# 3. the second score: how it does on an acquisition it has never seen
+heritage-watch interval --config configs/herat.yaml \
+  --features cache/features_month.npz cache/features_satlas_month.npz \
+  --representation satlas_mi_si_diff
+# → macro-F1 0.5745
 ```
 
 Every dropped row carries a ledger reason. Relative paths inside a YAML resolve
@@ -156,52 +167,56 @@ Compute transfer macro-F1 as in [NEW_SITE.md](docs/NEW_SITE.md).
 
 ## Results
 
-Eight paired jittered-grid replicates, five spatially grouped folds, n = 879.
+Eight paired jittered-grid replicates, five spatially grouped folds, n = 882.
 Macro-F1 weights the four classes equally; majority floor **0.151**.
 
 | Representation | CLI name | dim | Macro-F1 |
 |---|---|---:|---:|
-| DINOv2, post-event only | `dinov2_post` | 768 | 0.6439 |
-| DINOv2, both + diff | `dinov2_both_diff` | 2304 | 0.6656 |
-| Satlas-SI, post-event only | `satlas_si_post` | 1920 | 0.6698 |
-| Satlas-SI, both + diff | `satlas_si_both_diff` | 5760 | 0.6918 |
-| Satlas-MI, order-invariant | `satlas_mi` | 1920 | 0.6823 |
-| **Satlas-MI + SI diff (selected)** | `satlas_mi_si_diff` | **3840** | **0.7259** |
-| Merged DINOv2 + Satlas | `merged` | 8064 | 0.7062 |
+| DINOv2, post-event only | `dinov2_post` | 768 | 0.6921 |
+| DINOv2, both + diff | `dinov2_both_diff` | 2304 | 0.7147 |
+| Satlas-SI, post-event only | `satlas_si_post` | 1920 | 0.7204 |
+| Satlas-SI, both + diff | `satlas_si_both_diff` | 5760 | 0.7559 |
+| Satlas-MI, order-invariant | `satlas_mi` | 1920 | 0.6881 |
+| **Satlas-MI + SI diff (selected)** | `satlas_mi_si_diff` | **3840** | **0.7788** |
+| Merged DINOv2 + Satlas | `merged` | 8064 | 0.7873 |
 
 Satlas-MI max-pools over time, so it is order-invariant and cannot by itself
 separate Destruction from New Construction. The signed difference
 `f_si_t2 − f_si_t1` restores direction. Satlas's four pyramid levels are
-global-average-pooled and concatenated; DINOv2 resizes 128 px chips to 224 px
+global-average-pooled and concatenated; DINOv2 resizes 64 px chips to 224 px
 with ImageNet normalization, while Satlas uses native chips scaled to `[0,1]`.
 
-**The top two are not separated.** The selected system wins 8/8 replicates by
-+0.0197 — above 2·SE, but **0.0003 below** the 0.02 minimum effect. It is chosen
-on parsimony: 3840 dimensions and one encoder family, versus 8064 and two.
+**The top two are not separated.** Merged leads by +0.0085 on 7 of 8 replicates
+— below both 2·SE and the 0.02 minimum effect. The selected row is chosen on
+parsimony: 3840 dimensions and one encoder family, versus 8064 and two. Every
+other row is resolved against it.
+
+Chips are 64 px, not the 128 px used in earlier versions of this table. A paired
+sweep over 32/64/128/256 put 64 ahead of 128 by 0.0885, 8/8 replicates. Since
+DINOv2 resizes every chip to a fixed 224 px input, its arms differ only in
+ground extent and it gains just as much — so this is field of view, not input
+resolution. A 64 px window spans about 16 m, roughly one building.
 
 ## Honest limits
 
 <details>
 <summary><b>Read before quoting any number</b></summary>
 
-- **Spatial blocking is not time blocking.** All acquisition pairs appear on both
-  sides of every fold. The report's leave-one-interval-out diagnostic is
-  directionally clear — a held-out interval is worse in 9 of 10 cases — but those
-  published figures came from the superseded 838-sample manifest with test rows
-  drawn *randomly* within the interval. `scripts/controls.py` now draws whole
-  spatial cells and withholds them from both arms; that corrected diagnostic has
-  not yet been published. The claim supported is "temporal generalisation is
-  materially worse than the headline" and **no specific number**.
-- **Destruction is weak.** Fixed-grid F1 **0.548**; **50.0 %** correct, **41.3 %**
-  read as New Construction — the opposite temporal order of the same states.
-  Those fixed-grid per-class figures use a different averaging scheme from the
-  jittered headline and need not match `report()`.
-- **Provenance fix was score-neutral.** Reading the layer month rather than the
-  year changed which scenes back each pair; the strictly paired effect is
-  +0.0067 on 811 shared points, inside the noise floor. Adopted on provenance,
-  not accuracy. Different dataset versions hold different populations, so their
-  headline differences cannot be attributed to this fix.
-- **0.7259 is a lower bound, not a ceiling.** Encoders are frozen and untuned.
+- **Spatial blocking is not time blocking.** The headline holds all acquisition
+  pairs on both sides of every fold, so it answers "another building, same
+  flight". The second score, `evaluate_interval`, holds out each acquisition in
+  turn and scores 0.574 against the headline's 0.779. Re-running it with the
+  interval labels shuffled — same capped training pool, same cell blocking, no
+  date structure — gives 0.739, so the smaller pool costs 0.040 and date
+  novelty costs 0.165. That 0.165 is a **lower bound**: the scenes chain, so a
+  held-out interval's model has usually still seen one of its two endpoint
+  images through a neighbouring pair. Only a second site can do better.
+- **Destruction is weak.** Fixed-grid F1 **0.642**; **62.3 %** correct, **29.0 %**
+  read as New Construction — the opposite temporal order of the same states. It
+  is also the second-rarest class (138 of 882). Those fixed-grid per-class
+  figures use a different averaging scheme from the jittered headline and need
+  not match `report()`.
+- **0.7788 is a lower bound, not a ceiling.** Encoders are frozen and untuned.
 - **Not a deployment assurance.** Probabilities are uncalibrated, and any
   new-site claim needs independent ground truth.
 
@@ -210,9 +225,9 @@ on parsimony: 3840 dimensions and one encoder family, versus 8064 and two.
 ## Reference study
 
 Herat Old City, Afghanistan, 2009–2025 — 21 GeoTIFF scenes, 10 usable
-acquisition pairs, 879 labels. Herat is on UNESCO's **Tentative List**, not an
+acquisition pairs, 882 labels. Herat is on UNESCO's **Tentative List**, not an
 inscribed World Heritage Site. Nominal resolution 0.25 m/px; the geographic
-raster grid gives ≈0.247 × 0.297 m pixels, so the 128 px chip spans ≈32 × 38 m.
+raster grid gives ≈0.247 × 0.297 m pixels, so the 64 px chip spans ≈16 × 19 m.
 
 ## Notes on running
 
@@ -232,6 +247,7 @@ rasterio 1.5, timm 1.0.26.
 
 ## More
 
+[The benchmark](docs/BENCHMARK.md) ·
 [Protocol and decision rule](docs/PROTOCOL.md) ·
 [Results and solver fidelity](docs/RESULTS.md) ·
 [New-site instructions](docs/NEW_SITE.md) ·

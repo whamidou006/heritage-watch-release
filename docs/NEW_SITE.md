@@ -8,11 +8,13 @@ outside this package if necessary; the code deliberately refuses incompatible
 grids rather than silently comparing different ground windows. RGB band order
 must actually be RGB; no automatic band identification is attempted.
 
-Bring imagery of comparable physical scale. Matching 128px alone is not enough
-when a new site's resolution differs. The original 128px window is roughly
-32×38m. Nodata inside a footprint is not currently screened: inspect it before
-use (the reference Herat scenes had no internal blank pixels). A footprint
-intersection is a rectangle test, not a valid-data mask.
+Bring imagery of comparable physical scale. Matching 64px alone is not enough
+when a new site's resolution differs. The reference 64px window is roughly
+16×19m, about one building, and a paired sweep showed that ground extent — not
+pixel count — is what the score responds to. Pick the pixel count that spans
+~16m at your resolution. Nodata inside a footprint is not currently screened:
+inspect it before use (the reference Herat scenes had no internal blank
+pixels). A footprint intersection is a rectangle test, not a valid-data mask.
 
 Annotations must be **labelled points already identified as changes**, not
 masks. This package does not find new change locations automatically.

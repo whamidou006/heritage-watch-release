@@ -14,7 +14,7 @@ def test_exact_headers_and_relative_paths(tmp_path):
     cfg = load_config(p)
     assert cfg.imagery_dir == tmp_path / "images"
     assert cfg.columns["x"] == "X "
-    assert (cfg.chip_size, cfg.blocks, cfg.folds, cfg.replicates) == (128, 6, 5, 8)
+    assert (cfg.chip_size, cfg.blocks, cfg.folds, cfg.replicates) == (64, 6, 5, 8)
 
 
 @pytest.mark.parametrize("field,value", [

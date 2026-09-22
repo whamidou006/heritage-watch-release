@@ -19,7 +19,7 @@ class SiteConfig:
         "year": "year", "x": "X ", "y": "Y"})
     pairing: str = "month"
     tolerance_days: int = 75
-    chip_size: int = 128
+    chip_size: int = 64
     blocks: int = 6
     folds: int = 5
     replicates: int = 8

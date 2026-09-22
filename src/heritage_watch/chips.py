@@ -33,7 +33,7 @@ def validate_raster(src, reference=None):
     return src.crs, t
 
 
-def extract_chips(records, imagery_dir, chip=128):
+def extract_chips(records, imagery_dir, chip=64):
     """Return (t1, t2, keep) with only full-window rows in t1/t2.
 
     `keep` maps the returned arrays back to the input records. A missing window
