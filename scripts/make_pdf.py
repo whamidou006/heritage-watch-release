@@ -140,7 +140,11 @@ def main() -> None:
 
     branch = args.branch or git("rev-parse", "--abbrev-ref", "HEAD", cwd=root) or "main"
     commit = git("rev-parse", "--short", "HEAD", cwd=root)
-    dirty = bool(git("status", "--porcelain", cwd=root))
+    # Only TRACKED modifications make the provenance stamp say "dirty".
+    # Untracked files are usually the PDFs being written by this very run,
+    # which would make every document after the first one claim the source
+    # had uncommitted changes.
+    dirty = bool(git("status", "--porcelain", "--untracked-files=no", cwd=root))
 
     text = src.read_text(encoding="utf-8")
     text = absolutise_links(text, root, src, branch)
