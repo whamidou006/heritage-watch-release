@@ -64,6 +64,9 @@ class Result:
     confusion: np.ndarray | None = None
     n: int = 0
     pairing_id: str | None = None
+    # Only set by evaluate_interval: (min, max) held-out predictions per
+    # replicate. n stays the population size, as it is for evaluate().
+    held_out_per_replicate: tuple[int, int] | None = None
 
 
 def load_chips(path: str):
@@ -208,7 +211,8 @@ def _evaluate(X, y, meta, clf_factory, replicates, seed=_SEED,
 
 MIN_EFFECT = 0.02  # smallest macro-F1 gap the protocol will call real
 
-INTERVAL_TRAIN = 500  # rows sampled per interval arm, so every interval is size-matched
+INTERVAL_TRAIN = 500  # CAP on rows per interval arm, so a big interval is not
+                      # scored against a bigger training set than a small one
 
 
 def evaluate_interval(X, y, meta, clf_factory=default_classifier,
@@ -223,11 +227,13 @@ def evaluate_interval(X, y, meta, clf_factory=default_classifier,
 
     Each interval is held out in turn. Test rows are WHOLE spatial cells, and
     those cells are withheld from training too, so the contrast is date novelty
-    and not proximity. Training pools are subsampled to a common size so a big
-    interval is not scored against a bigger training set than a small one.
-    Predictions are pooled across intervals before the metric is taken, so the
-    score is macro-F1 over the fixed four classes rather than an average of
-    per-interval metrics computed over whichever classes happened to appear.
+    and not proximity. Training pools are CAPPED at n_train rows so a big
+    interval is not scored against a bigger training set than a small one; they
+    can be smaller than the cap when cell exclusion leaves fewer rows (286-500
+    on the reference data). Predictions are pooled across intervals before the
+    metric is taken, so the score is macro-F1 over the fixed four classes
+    rather than an average of per-interval metrics computed over whichever
+    classes happened to appear.
 
     Expect this to come out well below evaluate(). On the reference data
     (Satlas-MI + SI diff, 64 px) the two scores are 0.779 and 0.574. Two
@@ -266,6 +272,14 @@ def _evaluate_interval(X, y, meta, clf_factory, replicates, seed, blocks,
     intervals = sorted(set(pair))
     if len(intervals) < 2:
         raise ValueError("need at least two acquisition intervals to hold one out")
+    # Same purpose as _evaluate's fingerprint: compare() must refuse two results
+    # that were not produced on identical rows under an identical protocol.
+    # n_train and the interval list join the hash because both change the split.
+    pairing = hashlib.sha256(json.dumps(
+        ["interval", labs, list(map(str, y)), list(map(str, pair)), seed,
+         replicates, blocks, n_train, x.tolist(), yy.tolist(),
+         list(map(str, meta.get("fid", range(len(y)))))],
+        separators=(",", ":")).encode()).hexdigest()
 
     scores, coverage, pooled = [], [], []
     for r in range(replicates):
@@ -275,7 +289,10 @@ def _evaluate_interval(X, y, meta, clf_factory, replicates, seed, blocks,
         for p in intervals:
             idx_p = np.flatnonzero(pair == p)
             if len(idx_p) < 2:
-                continue
+                raise ValueError(
+                    f"interval {p!r} has {len(idx_p)} row(s); every interval must "
+                    "supply a usable held-out arm. Filter it out of the data "
+                    "explicitly rather than scoring a silent subset.")
             # take whole cells until about half the interval's rows are held out
             order = rng.permutation(np.unique(cells[idx_p]))
             take, want, got = [], len(idx_p) // 2, 0
@@ -288,10 +305,15 @@ def _evaluate_interval(X, y, meta, clf_factory, replicates, seed, blocks,
             test = idx_p[in_te]
             pool = np.flatnonzero((pair != p) & ~np.isin(cells, take))
             if not len(test) or len(pool) < 2:
-                continue
+                raise ValueError(
+                    f"interval {p!r} on replicate {r} left {len(test)} test row(s) "
+                    f"and {len(pool)} training row(s); it cannot be held out. "
+                    "Reduce `blocks` or drop the interval explicitly.")
             tr = rng.choice(pool, size=min(n_train, len(pool)), replace=False)
             if len(set(y_idx[tr])) < 2:
-                continue
+                raise ValueError(
+                    f"interval {p!r} on replicate {r} drew a single-class training "
+                    "sample; raise n_train or drop the interval explicitly.")
             clf = clf_factory()
             clf.fit(X[tr], y_idx[tr])
             truth.append(y_idx[test])
@@ -304,8 +326,12 @@ def _evaluate_interval(X, y, meta, clf_factory, replicates, seed, blocks,
         coverage.append(len(truth))
         pooled.append((truth, pred))
 
+    # n is the POPULATION, matching evaluate(); the held-out count per replicate
+    # is a property of the split, not the dataset, so it is reported separately.
     res = Result(macro_f1=float(np.mean(scores)), sd=float(np.std(scores, ddof=1)),
-                 per_replicate=[float(s) for s in scores], n=int(np.mean(coverage)))
+                 per_replicate=[float(s) for s in scores], n=len(y_idx),
+                 pairing_id=pairing,
+                 held_out_per_replicate=(int(min(coverage)), int(max(coverage))))
     f1s = np.array([f1_score(t, p, average=None, labels=range(len(labs)),
                              zero_division=0) for t, p in pooled])
     prs = np.array([precision_recall_fscore_support(
@@ -370,6 +396,10 @@ def report(res: Result, title="result"):
     print(f"n = {res.n}   macro-F1 = {res.macro_f1:.4f} +/- {res.sd:.4f} "
           f"over {len(res.per_replicate)} replicates")
     print(f"  replicates: " + " ".join(f"{s:.3f}" for s in res.per_replicate))
+    if res.held_out_per_replicate is not None:
+        lo, hi = res.held_out_per_replicate
+        print(f"  held-out predictions per replicate: {lo}-{hi} "
+              f"(each row is scored only when its acquisition is the held-out one)")
     print(f"\n{'class':<22}{'P':>8}{'R':>8}{'F1':>8}    (all averaged over "
           f"{len(res.per_replicate)} replicates)")
     for c in labs:
