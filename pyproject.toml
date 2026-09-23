@@ -7,22 +7,22 @@ name = "heritage-watch"
 version = "1.0.0"
 description = "Frozen-encoder semantic change classification with paired spatial evaluation"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [{name = "Heritage Watch contributors"}]
 dependencies = [
     "numpy>=1.26,<3",
     "scikit-learn>=1.8,<1.9",
     "rasterio>=1.4,<2",
-    "torch>=2.8,<3",
-    "timm>=1.0.26,<2",
-    "satlaspretrain-models>=0.3.1,<0.4",
     "PyYAML>=6,<7",
     "joblib>=1.5,<2",
     "threadpoolctl>=3.6,<4",
 ]
 
 [project.optional-dependencies]
+# Only needed to run the frozen encoders (DINOv2, Satlas). The evaluation
+# harness, the chip extractor and the student baseline need none of this.
+encoders = ["torch>=2.8,<3", "timm>=1.0.26,<2", "satlaspretrain-models>=0.3.1,<0.4"]
 test = ["pytest>=9,<10"]
 
 [project.scripts]

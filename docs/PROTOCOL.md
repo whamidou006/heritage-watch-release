@@ -59,10 +59,12 @@ A difference is resolved only when:
 2. **Above uncertainty**: `abs(mean(d)) > 2 * std(d) / sqrt(R)`.
 3. **Material**: `abs(mean(d)) >= 0.02`.
 
-Standard deviations use the original harness's population convention (`ddof=0`).
-A unanimous effect above 2·SE but below 0.02 is **“consistent but SMALL”**,
-not separated and not a ranking claim. The published top-two gap, +0.0085 on
-7 of 8 replicates, is exactly such a case.
+Standard deviations use the sample convention (`ddof=1`). With 6–8 replicates
+the population convention understates the spread by about 7 %, which would make
+the uncertainty bar slightly too easy to clear. A unanimous effect above 2·SE
+but below 0.02 is **“consistent but SMALL”**, not separated and not a ranking
+claim. The published top-two gap, +0.0085 on 7 of 8 replicates, fails bar 1 and
+bar 3 — it is not unanimous and it is below the minimum effect.
 
 Why all three bars? Against a null of two equally good representations (60
 disjoint random halves of one feature set), 7/8 wins plus 2·SE called **20%**

@@ -17,10 +17,10 @@ and **no PCA**.
 | Merged DINOv2 + Satlas | 8064 | 0.7873 | 0.009 |
 
 The top-two difference is +0.0085 for the merged pair, 7/8 replicates,
-2·SE=0.0066. It **fails** the 0.02 minimum effect: the two are **not
-separated**. Select Satlas-MI + SI diff on parsimony (3840 dims against 8064,
-one encoder against two), not a claimed superiority. Every other row is
-resolved against it.
+2·SE=0.0066. It clears the uncertainty bar but **fails** unanimity and the 0.02
+minimum effect: the two are **not separated**. Select Satlas-MI + SI diff on
+parsimony (3840 dims against 8064, one encoder against two), not a claimed
+superiority. Every other row is resolved against it.
 
 Chips are 64px, not the 128px used in earlier versions of this table. A paired
 sweep over 32/64/128/256 on identical rows, one shared grid and identical folds
@@ -117,3 +117,16 @@ scores; small numerical deviations from the printed table can occur.
 
 Earlier appendix ablations were mostly measured on a year-resolved n=838
 population; their point estimates are not silently relabelled as n=882 results.
+
+## Regenerating these tables
+
+The baseline rows in this file and in `hackathon/README.md` come from one
+script. Re-run it after any change to the chips, the encoder or the protocol;
+do not hand-edit the tables.
+
+```bash
+PYTHONPATH=src python scripts/baselines.py --cache-dir cache --out out/baselines.json
+```
+
+The colour-only rows need no encoder cache and are reproduced on CPU in about
+two minutes by `hackathon/baseline.py`.

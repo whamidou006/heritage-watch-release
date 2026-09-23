@@ -165,3 +165,50 @@ def test_evaluate_interval_is_harder_than_the_spatial_score_when_dates_carry_the
     interval = evaluate_interval(X, y, meta, classes=["A", "B"], blocks=3, replicates=2)
     assert spatial.macro_f1 > 0.9
     assert interval.macro_f1 < 0.6
+
+
+def test_interval_results_compare_and_refuse_mismatched_protocols(capsys):
+    """compare() must work on two interval arms and refuse anything not paired."""
+    X, y, meta = _interval_data()
+    kw = dict(classes=["A", "B"], blocks=3, replicates=2, n_train=60)
+    a = evaluate_interval(X, y, meta, **kw)
+    b = evaluate_interval(X + 0.5, y, meta, **kw)
+    compare(a, b, "a", "b")                       # same rows, same protocol: allowed
+    assert "a - b" in capsys.readouterr().out
+
+    for changed in (dict(seed=99), dict(blocks=4), dict(n_train=40)):
+        other = evaluate_interval(X, y, meta, **{**kw, **changed})
+        with pytest.raises(ValueError, match="not paired"):
+            compare(a, other)
+
+    meta2 = {**meta, "pair": np.where(meta["pair"] == "p0", "pX", meta["pair"])}
+    with pytest.raises(ValueError, match="not paired"):
+        compare(a, evaluate_interval(X, y, meta2, **kw))
+
+
+def test_interval_and_spatial_scores_are_never_compared():
+    """They answer different questions; mixing them would be a false claim."""
+    X, y, meta = _interval_data()
+    spatial = evaluate(X, y, meta, classes=["A", "B"], blocks=3, folds=2, replicates=2)
+    interval = evaluate_interval(X, y, meta, classes=["A", "B"], blocks=3, replicates=2)
+    with pytest.raises(ValueError, match="not paired"):
+        compare(spatial, interval)
+
+
+def test_interval_reports_population_n_and_held_out_range():
+    X, y, meta = _interval_data()
+    r = evaluate_interval(X, y, meta, classes=["A", "B"], blocks=3, replicates=2,
+                          n_train=60)
+    assert r.n == len(y)                          # population, matching evaluate()
+    lo, hi = r.held_out_per_replicate
+    assert 0 < lo <= hi < len(y)                  # the split, reported separately
+
+
+def test_interval_fails_loudly_on_an_unusable_interval():
+    """A silent skip would score a subset while reporting the full population."""
+    X, y, meta = _interval_data()
+    meta = {k: (v.copy() if hasattr(v, "copy") else v) for k, v in meta.items()}
+    meta["pair"] = np.asarray(meta["pair"]).astype(object)
+    meta["pair"][0] = "singleton"
+    with pytest.raises(ValueError, match="singleton"):
+        evaluate_interval(X, y, meta, classes=["A", "B"], blocks=3, replicates=1)

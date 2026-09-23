@@ -1,7 +1,8 @@
 """Score the four reference baselines under both official protocol scores.
 
-These are the numbers in docs/BENCHMARK.md. Re-run this if you change the
-chip cache, the encoder, or the protocol; do not hand-edit the table.
+These are the numbers in docs/RESULTS.md and hackathon/README.md. Re-run this
+if you change the chip cache, the encoder, or the protocol; never hand-edit
+the tables.
 
     python scripts/baselines.py --cache-dir <dir> --out out/baselines.json
 

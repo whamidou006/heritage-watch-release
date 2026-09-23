@@ -13,8 +13,8 @@ Panel, Destruction, Temporary Structure.
 It does **not** search the image for changes. The locations are supplied.
 
 **Working on this as a student or a benchmark entrant?** Start with
-[the benchmark](docs/BENCHMARK.md): two fixed scores, four baselines to beat,
-and the rule for when a difference is real.
+[the hackathon pack](hackathon/README.md): the data, the two fixed scores, a
+baseline you run with one command, and the rule for when a difference is real.
 
 | | |
 |---|---:|
@@ -187,7 +187,7 @@ global-average-pooled and concatenated; DINOv2 resizes 64 px chips to 224 px
 with ImageNet normalization, while Satlas uses native chips scaled to `[0,1]`.
 
 **The top two are not separated.** Merged leads by +0.0085 on 7 of 8 replicates
-— below both 2·SE and the 0.02 minimum effect. The selected row is chosen on
+— not unanimous, and below the 0.02 minimum effect. The selected row is chosen on
 parsimony: 3840 dimensions and one encoder family, versus 8064 and two. Every
 other row is resolved against it.
 
@@ -247,7 +247,7 @@ rasterio 1.5, timm 1.0.26.
 
 ## More
 
-[The benchmark](docs/BENCHMARK.md) ·
+[The hackathon pack](hackathon/README.md) ·
 [Protocol and decision rule](docs/PROTOCOL.md) ·
 [Results and solver fidelity](docs/RESULTS.md) ·
 [New-site instructions](docs/NEW_SITE.md) ·
