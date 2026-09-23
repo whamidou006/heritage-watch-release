@@ -247,7 +247,7 @@ rasterio 1.5, timm 1.0.26.
 
 ## More
 
-[The hackathon pack](hackathon/README.md) ·
+[The hackathon pack](hackathon/README.md) ([PDF](docs/pdf/student-challenge.pdf)) ·
 [Protocol and decision rule](docs/PROTOCOL.md) ·
 [Results and solver fidelity](docs/RESULTS.md) ·
 [New-site instructions](docs/NEW_SITE.md) ·

@@ -290,3 +290,7 @@ one that wins by scoring a different split.
 Full methodology and controls: [`docs/PROTOCOL.md`](../docs/PROTOCOL.md) ·
 all measurements: [`docs/RESULTS.md`](../docs/RESULTS.md) · the long report and
 every study script live on the `research` branch.
+
+A PDF of this page is at [`docs/pdf/student-challenge.pdf`](../docs/pdf/student-challenge.pdf).
+It is rendered from this file by `scripts/make_pdf.py`; if the two ever
+disagree, this file is right.
