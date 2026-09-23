@@ -15,6 +15,11 @@ records claims that **did not survive re-measurement**. That history is the usef
 | `APPENDIX.md` | Supporting ablations (§A1–A7). **Still measured at the superseded 128 px chip size** |
 | `scripts/` | One script per experiment; each writes a JSON into `out/` |
 | `out/` | Every measurement quoted in the report, as produced |
+| `pdf/` | `REPORT.md` and `APPENDIX.md` rendered for sharing |
+
+The PDFs come from `scripts/make_pdf.py` (on `main`) and carry the commit they
+were rendered from. The Markdown is the source of truth; re-render rather than
+editing a PDF.
 
 ## Reading the result files
 
