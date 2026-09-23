@@ -133,7 +133,8 @@ You report **both**.
 | `evaluate` | Another building, same flight | Test points are whole spatial cells; every acquisition appears on both sides |
 | `evaluate_interval` | An acquisition you have never seen | Each acquisition is held out in turn; its test cells are withheld from training too |
 
-On the reference system the gap is 0.779 against 0.574. A single number hides it.
+The gap between them is large — on the colour baseline, 0.641 against 0.350,
+and every system we have run shows the same drop. A single number hides it.
 
 Both return **macro-F1** over the four classes — every class counts equally, so
 you cannot win by getting the two big ones right. Both average 8 replicates
@@ -202,9 +203,8 @@ and subtracting is the easiest way to invent a result that is not there.
 
 ## Where you stand
 
-Everything below is measured on 64 px chips, n = 882, 8 replicates.
-
-**What `baseline.py` prints**, on CPU, in about two minutes — colour only:
+Everything below is measured on 64 px chips, n = 882, 8 replicates, and every
+row is reproduced by `baseline.py` on CPU in about two minutes.
 
 | | another building | unseen acquisition |
 |---|---:|---:|
@@ -213,47 +213,40 @@ Everything below is measured on 64 px chips, n = 882, 8 replicates.
 | Colour histogram, after-image only | 0.624 | **0.406** |
 | **Colour histogram, both dates + difference** | **0.641** | 0.350 |
 
+**Beat 0.641 and 0.350**, and say which score you moved.
+
 Look at the last two rows. On score 1 adding the before-image gains +0.0167 on
 8 of 8 replicates — consistent, but under 0.02, so the protocol calls it *not
 separated*. On score 2 the same change **loses** 0.0566 on 8 of 8, which is
 resolved. A modelling choice can help on one score and hurt on the other; that
-is exactly why you report both. Beat **0.641 / 0.350**, and say which score you
-moved.
+is exactly why you report both.
 
-**Reference systems** — frozen pretrained encoders, same chips. These are the
-targets:
+This is a deliberately weak starting point: 144 numbers per chip, no shape, no
+texture, no pretrained weights. A frozen off-the-shelf encoder and the same
+linear head will beat it, and that is the intended first move.
 
-| | another building | unseen acquisition |
-|---|---:|---:|
-| Frozen DINOv2 ViT-B/14, post-event only | 0.692 | 0.499 |
-| Frozen DINOv2, both dates + difference | 0.715 | — |
-| Frozen Satlas Aerial Swin-v2-B, post-event only | 0.720 | — |
-| Frozen Satlas, both dates + difference | 0.756 | — |
-| Satlas multi-image fusion only | 0.688 | — |
-| **Satlas multi-image fusion + single-image difference** | **0.779** | **0.574** |
-| Merged DINOv2 + Satlas | 0.787 | — |
-
-Note how little the pretrained encoders buy at first: a 144-dimensional colour
-histogram (0.641) is within 0.052 of frozen DINOv2 (0.692). The top two rows
-differ by 0.0085 on 7 of 8 replicates — **not separated**. Every encoder here
-is **frozen and untuned**, so 0.779 is a lower bound, not a ceiling.
-
-Per class, the selected reference system (Satlas fusion + difference) scores
-Solar Panel 0.92, New Construction 0.85, Temporary Structure 0.65, and
-**Destruction 0.64**. Destruction is the weak class: 62 % correct, and 29 % of
-it reads as New Construction — the same two ground states in the opposite
-temporal order.
+We are not publishing our own leaderboard entry. You are being scored against
+the protocol, not against us, and a target number tends to become a ceiling —
+people stop when they reach it. What we will say is that the organisers' own
+systems are all **frozen and untuned**, so nothing you see here is near a
+ceiling, and that **Destruction is the weak class in every system we ran**:
+around 62 % correct, with roughly 29 % of it read as New Construction — the
+same two ground states in the opposite temporal order.
 
 ---
 
 ## Things already tested, so you don't repeat them
 
-- **Class reweighting is worth −0.001.** Balancing the head does nothing.
+Directions, not numbers — these were measured on systems stronger than the
+baseline, so the sizes would not carry over anyway.
+
+- **Class reweighting is worth about −0.001.** Balancing the head does nothing.
 - **More labels alone will not fix Destruction.** Downsample New Construction to
   Destruction's support and the ranking flips, so Destruction is not
   intrinsically hard — it is *confusable* with one specific other class.
-- **Chip size follows an inverted U**: 32 → 0.755, 64 → 0.783, 128 → 0.694,
-  256 → 0.645. 64 beats 128 by 0.0885, 8/8, resolved.
+- **Chip size follows an inverted U** across 32 / 64 / 128 / 256 px, peaking at
+  64. The 64-versus-128 gap is 0.0885, 8/8, resolved, and it is the largest
+  single lever anyone here has measured.
 - **Adding the date as an input is a null** (+0.0010), which bounds the date
   shortcut but does not remove it — a model can use a correlate of the date
   without being handed the date.
@@ -266,15 +259,17 @@ temporal order.
 ## Ideas worth trying
 
 - **Any pretrained encoder**: DINOv2/v3, SatlasPretrain, Clay, a plain ImageNet
-  CNN. Frozen embeddings plus a linear head is cheap and strong.
-- **Fine-tune a backbone instead of freezing it.** Nobody has tried this here,
-  and it is the clearest gap — every number above uses frozen features.
+  CNN. Frozen embeddings plus a linear head is cheap, strong, and the obvious
+  first move past the colour baseline.
+- **Fine-tune a backbone instead of freezing it.** Nobody here has tried it —
+  every system we have measured uses frozen features and a linear head.
 - **Purpose-built semantic change detection**: Open-CD, SCanNet, ChangeMask,
   AnyChange (SAM-based proposals), ChangeStar / Changen2 for synthetic pairs.
 - **Attack Destruction vs New Construction.** That single confusion is most of
   the remaining error, and it is a question of *direction*, not appearance.
-- **Close the acquisition gap.** Colour and seasonal normalisation across dates
-  is untried, and 0.165 of the second score's drop is date novelty.
+- **Close the acquisition gap.** Most of the drop from score 1 to score 2 is
+  genuine date novelty rather than a smaller training set, and colour or
+  seasonal normalisation across dates is untried.
 - **Multi-scale chips.** The sweep that chose 64 px only ever showed one window
   per point.
 
@@ -287,9 +282,14 @@ one that wins by scoring a different split.
 
 ---
 
-Full methodology and controls: [`docs/PROTOCOL.md`](../docs/PROTOCOL.md) ·
-all measurements: [`docs/RESULTS.md`](../docs/RESULTS.md) · the long report and
-every study script live on the `research` branch.
+The protocol is specified in full in [`docs/PROTOCOL.md`](../docs/PROTOCOL.md)
+— the splitting, the decision rule, and the calibration behind the three bars.
+Read it if you want to audit the evaluation rather than just run it.
+
+The organisers' own measurements are in `docs/RESULTS.md` and in the long
+report on the `research` branch. Nothing stops you reading them, but they are
+not the target: you are scored against the protocol, and a number to match is a
+worse goal than a question to answer.
 
 A PDF of this page is at [`docs/pdf/student-challenge.pdf`](../docs/pdf/student-challenge.pdf).
 It is rendered from this file by `scripts/make_pdf.py`; if the two ever
