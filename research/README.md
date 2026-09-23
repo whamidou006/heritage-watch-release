@@ -72,7 +72,7 @@ no longer research-only:
 |---|---|
 | Chip size 64 px, not 128 px (+0.0885, 8/8) | the default in `configs/herat.yaml`, and every regenerated table |
 | Held-out acquisition as a required second score | `protocol.evaluate_interval`, `heritage-watch interval` |
-| The date shortcut, and what removes it | `scripts/baselines.py`, `docs/BENCHMARK.md` |
+| The date shortcut, and what removes it | `scripts/baselines.py`, `hackathon/README.md` |
 
 The second score is measured differently from the leave-one-interval-out table in
 `REPORT.md` §4: it pools predictions across intervals before scoring, over the
